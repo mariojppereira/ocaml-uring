@@ -20,7 +20,7 @@ let ( <> ) : int -> int -> bool = ( <> )
 let slot_taken = -1
 let free_list_nil = -2
 
-type entry_rec = { entry_data : unit; extra_data : unit; mutable ptr : int }
+type entry_rec = { entry_data : unit; extra_data : unit; ptr : int }
 
 (* [extra_data] is for keeping pointers passed to C alive. *)
 type entry =
@@ -68,13 +68,14 @@ let create n : t =
     Array.make n Empty
   in
   { data; free_head; free_tail_relation; in_use = 0 }
+(*@ raises Invalid_argument *)
 
 exception No_space
 
-let alloc t data ~extra_data =
+let alloc t entry_data ~extra_data =
   let ptr = t.free_head in
   if ptr = free_list_nil then raise No_space;
-  let entry = Entry { entry_data = data; extra_data; ptr } in
+  let entry = Entry { entry_data; extra_data; ptr } in
   t.data.(ptr) <- entry;
 
   (* Drop [ptr] from the free list. *)
@@ -84,10 +85,11 @@ let alloc t data ~extra_data =
   t.in_use <- t.in_use + 1;
 
   entry
+(*@ raises No_space *)
 
 let free t ptr =
   assert (ptr >= 0) (* [alloc] returns only valid pointers. *);
-  if ptr >= Array.length t.data then Fmt.invalid_arg "Heap.free: invalid pointer %d" ptr;
+  if ptr >= Array.length t.data then invalid_arg "Heap.free: invalid pointer";
   let slot_state = t.free_tail_relation.(ptr) in
   if slot_state <> slot_taken then invalid_arg "Heap.free: pointer already freed";
 
@@ -96,8 +98,10 @@ let free t ptr =
     match t.data.(ptr) with
     | Empty -> assert false
     | Entry p ->
-      p.ptr <- -1;
-      p.entry_data
+      let p' = { p with ptr = -1 } in
+      (* p.ptr <- -1; changed due to Why3 constraints*)
+      t.data.(ptr) <- Entry p';
+      p'.entry_data
   in
 
   (* Cons [ptr] to the free-list. *)
@@ -111,5 +115,6 @@ let free t ptr =
   t.in_use <- t.in_use - 1;
 
   datum
+(*@ raises Invalid_argument *)
 
-let in_use t = t.in_use
+let in_use_ t = t.in_use
